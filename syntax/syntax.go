@@ -12,6 +12,7 @@ type Node struct {
 	Pos, End int
 	Children []*Node
 	Owns     int
+	Exclude  bool
 }
 
 func NewNode() *Node {

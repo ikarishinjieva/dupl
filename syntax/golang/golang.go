@@ -4,12 +4,13 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 
 	"github.com/mibk/dupl/syntax"
 )
 
 const (
-	BadNode = iota
+	BadNode        = iota
 	File
 	ArrayType
 	AssignStmt
@@ -63,20 +64,22 @@ const (
 // Parse the given file and return uniform syntax tree.
 func Parse(filename string) (*syntax.Node, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filename, nil, 0)
+	file, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
 		return nil, err
 	}
 	t := &transformer{
-		fileset:  fset,
-		filename: filename,
+		fileset:            fset,
+		filename:           filename,
+		noDuplCommentLines: map[*token.File]map[int]bool{},
 	}
 	return t.trans(file), nil
 }
 
 type transformer struct {
-	fileset  *token.FileSet
-	filename string
+	fileset            *token.FileSet
+	filename           string
+	noDuplCommentLines map[*token.File]map[int]bool
 }
 
 // trans transforms given golang AST to uniform tree structure.
@@ -85,6 +88,14 @@ func (t *transformer) trans(node ast.Node) (o *syntax.Node) {
 	o.Filename = t.filename
 	st, end := node.Pos(), node.End()
 	o.Pos, o.End = t.fileset.File(st).Offset(st), t.fileset.File(end).Offset(end)
+
+	{
+		f := t.fileset.File(st)
+		line := f.Line(st)
+		if a := t.noDuplCommentLines[f]; nil != a && a[line] {
+			o.Exclude = true
+		}
+	}
 
 	switch n := node.(type) {
 	case *ast.ArrayType:
@@ -197,6 +208,15 @@ func (t *transformer) trans(node ast.Node) (o *syntax.Node) {
 
 	case *ast.File:
 		o.Type = File
+		f := t.fileset.File(n.Pos())
+		t.noDuplCommentLines[f] = map[int]bool{}
+		for _, comment := range n.Comments {
+			if strings.Contains(comment.Text(), "NO_DUPL_CHECK") {
+				pos := comment.Pos()
+				line := t.fileset.File(pos).Line(pos)
+				t.noDuplCommentLines[f][line] = true
+			}
+		}
 		for _, decl := range n.Decls {
 			if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.IMPORT {
 				// skip import declarations

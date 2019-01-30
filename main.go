@@ -146,7 +146,15 @@ func printDupls(p printer.Printer, duplChan <-chan syntax.Match) error {
 	}
 	for _, k := range keys {
 		uniq := unique(groups[k])
-		if len(uniq) > 1 {
+		excluded := false
+		for _, nodes := range uniq {
+			for _, node := range nodes {
+				if node.Exclude {
+					excluded = true
+				}
+			}
+		}
+		if len(uniq) > 1 && !excluded {
 			if err := p.PrintClones(uniq); err != nil {
 				return err
 			}
